@@ -1,0 +1,30 @@
+## Type:       yes/no
+## Default:    no
+# Switch on/off debug messages (script & C code)
+DEBUG="no"
+
+## Type:       yes/no
+## Default:    yes
+# All the messages go to syslog and stderr (script & C code)
+USE_SYSLOG="yes"
+
+## Type:       string. Driver names separated by space
+## Default:    list of default drivers
+# All supported drivers listed here are loaded when service starts
+SUPPORTED_DRIVERS="fcoe bnx2fc"
+
+## Type:       integer
+## Default:    65
+# Wait at most for this amount of seconds to discover all _netdev fstab devices
+WAIT_TIMEOUT="65"
+
+## Type:       integer
+## Default:    0
+# Add an additional minimum wait time to WAIT_TIMEOUT.
+#
+# This can be useful if the FCoE device is not listed by path in /etc/fstab
+# (ie. /dev/by-path/fc-*) but LVM volumes on the FCoE device are.
+# The fcoe service does not know what devices will be attached, but we need a
+# delay for them to be ready before LVM volume scanning.  Increasing this can
+# help if mounts of LVM logical volumes on FCoE devices are failing at startup.
+MINIMUM_WAIT="0"

@@ -1,0 +1,46 @@
+#!/bin/sh
+
+function pause()
+{
+  echo "Press enter to continue"
+  read a
+}
+
+if [ "$DISPLAY" == "" ]; then
+  DIALOG="whiptail --fb"
+else
+  DIALOG="zenity"
+fi
+
+OPTION=""
+TMPFILE="/tmp/$(basename $0)-$$.item"
+TITLE="First Aid Kit quickstart menu"
+
+WIDTH="45"
+HEIGHT="18"
+MENUHEIGHT="10"
+TIMEOUT=60
+
+while [ "x$OPTION" == "x" ]; do
+  $DIALOG --menu "$TITLE" "$HEIGHT" "$WIDTH" "$MENUHEIGHT" shell "Start shell" fakd "Run diagnostic" reboot "Reboot"  2>$TMPFILE
+  if [ "$?" -ne 0 ]; then
+    exit 1
+  fi
+
+  OPTION=$(cat $TMPFILE)
+
+  if [ "x$OPTION" == "xshell" ]; then
+    echo "Starting shell..."
+    bash
+    OPTION=""
+  elif [ "x$OPTION" == "xfakd" ]; then
+    echo "Running diagnostic..."
+    firstaidkit -a
+    pause
+    OPTION=""
+  elif [ "x$OPTION" == "xreboot" ]; then
+    reboot
+    OPTION=""
+  fi
+
+done

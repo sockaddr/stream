@@ -1,0 +1,443 @@
+#!/usr/bin/python -tt
+# First Aid Kit - diagnostic and repair tool for Linux
+# Copyright (C) 2007 Martin Sivak <msivak@redhat.com>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+import sys, getopt, getpass, os, pprint, logging, re, readline, hashlib
+from threading import Thread
+from pyfirstaidkit import Tasker
+from pyfirstaidkit import Config, Info
+from pyfirstaidkit import reporting
+from pyfirstaidkit import initLogger
+from pyfirstaidkit.errors import InvalidPluginNameException
+from pyfirstaidkit.utils import BackupException
+
+class Flags:
+    print_config = False
+    main_help = False
+    gui_available = False
+
+
+class Output(Thread):
+    _no_answer = object()
+
+    def __init__(self, queue, importance = logging.INFO, interactive = True,
+                 *args, **kwargs):
+        Thread.__init__(self, *args, **kwargs)
+        self._running = True
+        self._queue = queue
+        self._importance = importance
+        self._interactive = interactive
+        self.levelstack = []
+
+    def run(self):
+
+        while self._running:
+            message = self._queue.get()
+            self.process_message(self._queue, message)
+
+    def process_message(self, mailbox, message):
+        if message["action"]==reporting.END:
+            self._running = False
+            return
+        elif message["action"] in (reporting.CHOICE_QUESTION,
+                                   reporting.TEXT_QUESTION,
+                                   reporting.FILENAME_QUESTION,
+                                   reporting.PASSWORD_QUESTION):
+            if not self._interactive:
+                return
+            question = message["message"]
+            while True:
+                answer = self._get_answer(message, question)
+                if answer is not self._no_answer:
+                    question.send_answer(message, answer, origin = self)
+                    break
+            return
+
+        elif message["action"]==reporting.START:
+            if self._importance<=message["importance"]:
+                print("[%s] START: %s (%s)" % (message["remote_name"], message["origin"].name,
+                        message["message"]))
+            if not message["remote"]:
+                self.levelstack.append(message["origin"].name)
+
+        elif message["action"]==reporting.STOP:
+            if self._importance<=message["importance"]:
+                print("[%s] STOP: %s (%s)" % (message["remote_name"], message["origin"].name,
+                        message["message"]))
+            if message["remote"]:
+                pass
+            elif self.levelstack[-1]!=message["origin"].name:
+                print("WARNING: START/STOP ordering mismatch in stack: " \
+                        +" / ".join(self.levelstack))
+            else:
+                self.levelstack.pop()
+
+        elif message["action"]==reporting.PROGRESS:
+            if self._importance<=message["importance"]:
+                print("[%s] PROGRESS: %d of %d (%s)" % (message["remote_name"], message["message"][0],
+                        message["message"][1], message["origin"].name))
+
+        elif message["action"]==reporting.INFO:
+            if self._importance<=message["importance"]:
+                print("[%s] INFO: %s (%s)" % (message["remote_name"], message["message"],
+                        message["origin"].name))
+
+        elif message["action"]==reporting.ALERT:
+            if self._importance<=message["importance"]:
+                print("[%s] ALERT: %s (%s)" % (message["remote_name"], message["message"],
+                        message["origin"].name))
+
+        elif message["action"]==reporting.EXCEPTION:
+            print("[%s] EXCEPTION: %s (%s)" % (message["remote_name"], message["message"],
+                    message["origin"].name))
+
+        elif message["action"]==reporting.TABLE:
+            if self._importance<=message["importance"]:
+                print("[%s] TABLE %s FROM %s" % (message["remote_name"], message["title"],
+                        message["origin"].name,))
+                pprint.pprint(message["message"])
+
+        elif message["action"]==reporting.TREE:
+            if self._importance<=message["importance"]:
+                print("[%s] TREE %s FROM %s" % (message["remote_name"], message["title"],
+                        message["origin"].name,))
+                pprint.pprint(message["message"])
+
+        elif message["action"]==reporting.ISSUE:
+            print("[%s] ISSUE FROM %s" % (message["remote_name"], message["origin"].name,))
+            pprint.pprint(str(message["message"]))
+        else:
+            print("FIXME: Unknown message action %d!!" % (message["action"],))
+            print(message)
+
+    def _get_answer(self, message, question):
+        """Return an answer, or self._no_answer if the answer was invalid."""
+        if message["action"]==reporting.CHOICE_QUESTION:
+            print("QUESTION: %s (%s)" % (question.prompt,
+                                         message["origin"].name))
+            for (idx, (unused_value, name)) in enumerate(question.options):
+                print("%4s. %s" % (idx + 1, name))
+            answer = raw_input("Your choice? ")
+            try:
+                answer = int(answer) - 1
+            except ValueError:
+                return self._no_answer
+            if answer >= 0 and answer < len(question.options):
+                return question.options[answer][0]
+            return self._no_answer
+
+        elif message["action"] in (reporting.TEXT_QUESTION,
+                                   reporting.FILENAME_QUESTION):
+            print("QUESTION: (%s)" % (message["origin"].name,))
+            return raw_input(question.prompt)
+
+        elif message["action"]==reporting.PASSWORD_QUESTION:
+            print("QUESTION: (%s)" % (message["origin"].name,))
+            if not question.confirm:
+                return getpass.getpass(question.prompt)
+            else:
+                p1 = getpass.getpass(question.prompt)
+                p2 = getpass.getpass("Confirm: %s" % (question.prompt,))
+                if p1==p2:
+                    return p1
+                else:
+                    print("Passwords do not match.")
+                    return self._no_answer
+
+        raise AssertionError("Unsupported question type %s" % message["action"])
+
+class GuiOutput(Thread):
+    def __init__(self, cfg, info, tasker, directory, importance = logging.INFO,
+            *args, **kwargs):
+        Thread.__init__(self, *args, **kwargs)
+        self.cfg = cfg
+        self.info = info
+        self.tasker = tasker
+        self.dir = directory
+        self.importance = importance
+        self.remote = Config.has_section("remote") and len(Config.items("remote"))
+
+
+    def run(self):
+        self.w = MainWindow(self.cfg, self.info, self.tasker, self.importance, self.dir)
+        self.w.remote(self.remote)
+        self.w.run()
+
+    def update(self, mailbox, message):
+        return self.w.update(mailbox, message)
+
+def usage(name):
+    print("""Usage:
+ firstaidkit [params]
+ firstaidkit [params] -a [flow]  - runs <flow> for every detected plugin.  If
+                                   <flow> is not specified it runs the diagnose
+                                   flow.  If the plugin that is being run does
+                                   not have <flow>, the plugin is ignored.
+
+ firstaidkit [params] -f <plugin> [flow]
+                                 - runs <flow> for <plugin>.  If <flow> is not
+                                   specified then it runs diagnose flow.  If
+                                   <plugin> is not specified, its an error.
+                                   Implies --nodeps
+
+ params is none or more items from:
+  -c <config file> - location of the config file
+  -r <root path>   - location of the root directory
+  -P <path>        - add different plugin path
+                     it can be used more than once
+  -v               - verbose mode
+  -l <method>      - select different log method
+                     -l stdout log to standard output
+                     -l file log to a file defined in config file.
+  -x <plugin>      - exclude plugin from run
+  -F <flag>        - set startup flag
+  -g <gui>         - frontend to show results
+                     -g console  - run the cli frontend
+                     -g gtk      - run the gtk frontend
+  -h               - help
+  --print-config   - print resulting config file
+  --flags          - list all known flags
+  --list           - list all plugins
+  --info <plugin>  - get information about plugin
+  --nodeps         - do not use plugin dependencies
+  --plugin-args=<plugin_name[/flow] args>
+                   - optionally pass arguments to plugin_name
+""")
+
+if __name__=="__main__":
+    try:
+        params, rest = getopt.getopt(sys.argv[1:], "aftc:r:vl:x:F:g:P:h",
+                ["list", "info=", "auto", "flow", "task", "config=", "root=",
+                "verbose", "log=", "exclude=","flag=", "gui=", "plugin-path=",
+                "print-config", "help", "flags", "nodeps", "plugin-args="])
+    except Exception, e:
+        print("\nError parsing the argument line: ",e,"\n")
+        usage(sys.argv[0])
+        sys.exit(1)
+
+    # Preliminary checks before we parse the options.
+    if len(params) == 0:
+        Flags.main_help = True
+
+    for key,val in params:
+        #currently not implemented and not documented!
+        if key in ("-t", "--task"):
+            Config.operation.mode = "task"
+            Flags.main_help = False
+
+        elif key in ("-a", "--auto"):
+            Config.operation.mode = "auto"
+            Flags.main_help = False
+
+        elif key in ("-f", "--flow"):
+            Config.operation.mode = "flow"
+            Flags.main_help = False
+            Config.operation.dependencies = "False"
+
+        elif key in ("-c", "--config"):
+            Config.read(val)
+
+        elif key in ("-v", "--verbose"):
+            Config.operation.verbose = "True"
+
+        elif key in ("-l", "--log"):
+            Config.log.method = val
+
+        elif key in ("-x", "--exclude"):
+            Config.plugin.disabled = Config.plugin.disabled + \
+                    ' "%s"' % (val.encode("string-escape"))
+            print("Excluding plugin %s\n" % (val,))
+
+        elif key in ("-F", "--flag"):
+            Config.operation.flags = Config.operation.flags + \
+                    ' "%s"' % (val.encode("string-escape"))
+
+        elif key in ("-r", "--root"):
+            Config.system.root = val
+
+        elif key in ("-g", "--gui"):
+            Config.operation.gui = val
+
+        elif key in ("-P", "--plugin-path"):
+            if not os.path.isdir(val):
+                print("%s is not a valid directory.  Exiting..."% val)
+                sys.exit(1)
+            Config.set("paths", val.strip("/"), val)
+
+        elif key in ("--print-config"):
+            Flags.print_config = True
+
+        elif key in ("-h", "--help"):
+            Config.operation.help = "True"
+            Flags.main_help = True
+
+        elif key in ("--flags"):
+            Config.operation.mode = "flags"
+
+        elif key in ("--list"):
+            Config.operation.mode = "list"
+
+        elif key in ("--info"):
+            Config.operation.mode = "info"
+            Config.operation.params = val
+
+        elif key in ("--nodeps"):
+            Config.operation.dependencies = "False"
+
+        elif key in ("--plugin-args"):
+            if not Config.has_section("plugin-args"):
+                Config.add_section("plugin-args")
+            Config.set("plugin-args", hashlib.sha1(val).hexdigest(), val)
+
+    if Flags.main_help:
+        usage(sys.argv[0])
+        sys.exit(1)
+
+    if Config.operation.mode == "flow":
+        if len(rest) < 1:
+            print("Error in the command arguments.\n")
+            usage(sys.argv[0])
+            sys.exit(1)
+        Config.operation.plugin = rest[0].encode("string-escape")
+        if len(rest)<=1:
+            Config.operation.mode = "plugin"
+        else:
+            Config.operation.flow = rest[1].encode("string-escape")
+
+    elif Config.operation.mode == "auto":
+        if len(rest)>0:
+            Config.operation.mode = "auto-flow"
+            Config.operation.flow = rest[0].encode("string-escape")
+
+    elif Config.operation.mode == "task":
+        Config.operation.plugin = rest[0]
+        Config.operation.task = rest[1]
+
+    if Flags.print_config:
+        Config.write(sys.stdout)
+        sys.exit(0)
+
+    #Add the frontend path to sys.path
+    for idx,p in enumerate(Config.system._list("frontend")):
+        sys.path.insert(1+idx, p)
+
+    try:
+        import frontend_gtk
+        MainWindow = frontend_gtk.MainWindow
+        Flags.gui_available = True
+    except:
+        Flags.gui_available = False
+
+    # TUI/GUI detection
+    if not Flags.gui_available and Config.operation.gui=="gtk":
+        print("GUI mode not available")
+        Config.operation.gui="console"
+
+    # TUI has to have operation specified
+    if Config.operation.mode == "" and Config.operation.gui!="gtk":
+        print("\nError in command arguments: no mode specified\n")
+        usage(sys.argv[0])
+        sys.exit(1)
+
+    # initialize log for plugin system.
+    fallbacks = Config.log.fallbacks.split(",")
+    for lfile in fallbacks:
+        try:
+            initLogger(Config)
+            break
+        except Exception, e:
+            if lfile != fallbacks[len(fallbacks)-1]:
+                Config.log.filename = lfile
+                continue
+            else:
+                print(e)
+                usage(sys.argv[0])
+                sys.exit(1)
+
+    report = reporting.Reports(maxsize = 1, silent = True)
+    try:
+        singlerun = Tasker(Config, reporting = report)
+    except BackupException, be:
+        print("\nError: %s\n"
+               "This happens when firstaidkit end without properly closing the "
+               "backup dir. If you are sure you don't have sensitive information "
+               "in that directory, you can safely erase it.  If you are not sure, "
+               "just change the directory name.\n" % be[0])
+        sys.exit(1)
+
+    if Config.operation.verbose=="False":
+        outputThread = Output(singlerun.reporting(),
+                              interactive = Config.operation.gui!="gtk")
+        if Config.operation.gui=="gtk":
+            outputThreadGui = GuiOutput(Config, Info, singlerun,
+                    directory = os.path.dirname(frontend_gtk.__file__))
+    else:
+        outputThread = Output(singlerun.reporting(), importance = 0,
+                              interactive = Config.operation.gui!="gtk")
+        if Config.operation.gui=="gtk":
+            outputThreadGui = GuiOutput(Config, Info, singlerun, importance = 0,
+                    directory = os.path.dirname(frontend_gtk.__file__))
+
+    if Config.operation.gui=="gtk":
+        singlerun.reporting().notify(outputThreadGui.update)
+    singlerun.reporting().notify(outputThread.process_message)
+
+    print("Starting the Threads")
+    #outputThread.start() #not needed, we use the callback method now
+
+    if Config.operation.gui=="gtk":
+        outputThreadGui.start()
+        print "GUI started"
+
+    #XXX change this to detection if GUI is not used (eg. noninteractive mode)
+    elif Config.operation.gui=="console":
+        print("Do the work!")
+
+        # Lock the Configuration
+        Config.lock()
+
+        try:
+            singlerun.run()
+
+        except InvalidPluginNameException, ipne:
+            print(ipne)
+
+        except Exception, e:
+            # This is when an unexpected exception occurs.  This usally
+            # means there is a bug somewhere.
+            print("!!! The First Aid Kit crashed in very unsafe way.\n!!! "
+                    "Please report this to the authors along with the "
+                    "following message.  You can create a ticket at "
+                    "https://fedorahosted.org/firstaidkit/newticket\n\n")
+            Config.write(sys.stdout)
+            print("Description of the error:\nError message:%s\n " \
+                    "Error class %s"% (e, e.__class__))
+
+        finally:
+            singlerun.end()
+
+    print("Waiting for the Threads")
+
+    #outputThread.join() #not needed, we use the callback method now
+    if Config.operation.gui=="gtk":
+        outputThreadGui.join()
+        del outputThreadGui
+
+    #make sure everything is deleted
+    del singlerun
+
+    print("Done.")

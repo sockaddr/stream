@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<event>
+    <name>Save to tar archive</name>
+    <name xml:lang="as">tar আৰ্কাইভলৈ সংৰক্ষণ কৰক</name>
+    <name xml:lang="bn_IN">টার সংরক্ষণাগারে সংরক্ষণ করুন</name>
+    <name xml:lang="de">Speichern im tar-Archiv</name>
+    <name xml:lang="es">Guardar en el archivo tar</name>
+    <name xml:lang="fr">Enregistrer sur l'archive tar</name>
+    <name xml:lang="gu">tar પેટીમાં સંગ્રહો</name>
+    <name xml:lang="hi"> tar archive में सेव करे</name>
+    <name xml:lang="it">Salva sull'archivio tar</name>
+    <name xml:lang="ja">tar アーカイブに保存</name>
+    <name xml:lang="kn">ಟಾರ್ ಸಂಚಯಕ್ಕೆ ಉಳಿಸು</name>
+    <name xml:lang="ko">tar 아카이브에 저장</name>
+    <name xml:lang="ml">tar ആര്‍ക്കൈവിലേക്കു് സൂക്ഷിയ്ക്കുക</name>
+    <name xml:lang="mr">tar आर्काइव्हमध्ये साठवा</name>
+    <name xml:lang="or">tar ଆଲେଖିରେ ସଂରକ୍ଷଣ କରନ୍ତୁ</name>
+    <name xml:lang="pa">ਆਰਕਾਇਵ ਵਿੱਚ ਸੰਭਾਲੋ</name>
+    <name xml:lang="pl">Zapisz do archiwum tar</name>
+    <name xml:lang="pt_BR">Salvar no arquivo tar</name>
+    <name xml:lang="ru">Создать архив tar</name>
+    <name xml:lang="ta">tar காப்பகத்தில் சேர்க்கவும்</name>
+    <name xml:lang="te">tar ఆర్కైవ్‌కు దాయి</name>
+    <name xml:lang="uk">Зберегти до архіву tar</name>
+    <name xml:lang="zh_CN">保存到 tar 归档</name>
+    <name xml:lang="zh_TW">儲存至 tar 備份檔</name>
+    <description>Save the problem data to a *.tar.gz in /tmp</description>
+    <description xml:lang="as">সমস্যা তথ্যক /tmp ত এটা *.tar.gz লৈ সংৰক্ষণ কৰক</description>
+    <description xml:lang="bn_IN">সমস্যা বিষয়ক ডেটা কোনো *.tar.gz in /tmp - এ সংরক্ষণ করুন</description>
+    <description xml:lang="de">Speichern der Problem-Daten in einem *.tar.gz in /tmp</description>
+    <description xml:lang="es">Guardar los datos del problema en un *.tar.gz en /tmp</description>
+    <description xml:lang="fr">Enregistrer les données de l'incident sur un fichier *.tar.gz dans /tmp</description>
+    <description xml:lang="gu">/tmp માં *.tar.gz માટે સમસ્યા માહિતીને સંગ્રહો</description>
+    <description xml:lang="hi">प्राब्लम डेटा को *.tar.gz करके यहाँ पर /tmp सेव करे</description>
+    <description xml:lang="it">Salva i dati problematici su un *.tar.gz in /tmp</description>
+    <description xml:lang="ja">問題のデータを /tmp 内の *.tar.gz に保存します</description>
+    <description xml:lang="kn">ತೊಂದರೆಯ ಮಾಹಿತಿಯನ್ನು /tmp ನಲ್ಲಿನ *.tar.gz ಗೆ ಉಳಿಸು</description>
+    <description xml:lang="ko">문제의 데이터를 /tmp 내의 *.tar.gz에 저장</description>
+    <description xml:lang="ml">/tmp-ല്‍ *.tar.gz-ലേക്കു് പ്രശ്നമുള്ള ഡേറ്റാ സൂക്ഷിയ്ക്കുക</description>
+    <description xml:lang="mr">/tmp मध्ये *.tar.gz अंतर्गत अडचण डाटा साठवा</description>
+    <description xml:lang="or">ସମସ୍ୟା ତଥ୍ୟକୁ ଗୋଟିଏ *.tar.gz in /tmp ରେ ସଂରକ୍ଷଣ କରନ୍ତୁ</description>
+    <description xml:lang="pa">ਸਮੱਸਿਆ ਡਾਟਾ ਇੱਕ *.tar.gz in /tmp ਵਿੱਚ ਸੰਭਾਲੋ</description>
+    <description xml:lang="pl">Zapisuje dane problemu do pliku *.tar.gz w /tmp</description>
+    <description xml:lang="pt_BR">Salvar os dados do problema em um *.tar.gz in /tmp</description>
+    <description xml:lang="ru">Сохранить данные сбоя в архив *.tar.gz в /tmp</description>
+    <description xml:lang="ta">சிக்கல் தரவை /tmp இல் *.tar.gz க்குச் சேர்</description>
+    <description xml:lang="te">/tmp నందు *.tar.gz కు సమస్య దత్తాంశం దాయి</description>
+    <description xml:lang="uk">Зберегти дані щодо проблеми до архіву *.tar.gz у /tmp</description>
+    <description xml:lang="zh_CN">将有问题的数据保存到 *.tar.gz in /tmp</description>
+    <description xml:lang="zh_TW">將有問題的資料儲存至 /tmp 目錄的 *.tar.gz</description>
+
+    <requires-items/>
+    <exclude-items-by-default>count,event_log,reported_to</exclude-items-by-default>
+    <exclude-items-always/>
+    <exclude-binary-items>no</exclude-binary-items>
+    <include-items-by-default/>
+    <minimal-rating>0</minimal-rating>
+</event>
