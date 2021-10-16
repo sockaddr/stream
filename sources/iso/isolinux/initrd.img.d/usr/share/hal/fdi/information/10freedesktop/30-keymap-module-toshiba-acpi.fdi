@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="ISO-8859-1"?> <!-- -*- SGML -*- -->
+
+<deviceinfo version="0.2">
+  <device>
+    <!-- These are buttons synthesized in the thinkpad-acpi kernel module -->
+    <match key="input.product" string="Toshiba input device">
+      <append key="input.keymap.data" type="strlist">0xe0c3:f21</append> <!-- 0x143: Touchpad Toggle -->
+      <append key="info.capabilities" type="strlist">input.keymap</append>
+    </match>
+  </device>
+</deviceinfo>
+
