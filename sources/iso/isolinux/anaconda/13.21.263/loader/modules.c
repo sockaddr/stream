@@ -379,7 +379,7 @@ gboolean mlRemoveBlacklist(gchar *module) {
     return TRUE;
 }
 
-inline gint gcmp(gconstpointer a, gconstpointer b, gpointer userptr)
+static inline gint gcmp(gconstpointer a, gconstpointer b, gpointer userptr)
 {
     return g_strcmp0(a, b);
 }
@@ -419,7 +419,7 @@ int processModuleLines(int (*f)(gchar**, void*), void *data)
     return count;
 }
 
-inline int cb_savestate(gchar** parts, void *data0)
+static inline int cb_savestate(gchar** parts, void *data0)
 {
     GTree *data = data0;
     logMessage(DEBUGLVL, "Saving module %s", parts[0]);
@@ -440,7 +440,7 @@ GTree* mlSaveModuleState()
     return state;
 }
 
-inline int cb_restorestate(gchar** parts, void *data0)
+static inline int cb_restorestate(gchar** parts, void *data0)
 {
     GTree *data = data0;
     pid_t pid;
@@ -476,7 +476,7 @@ inline int cb_restorestate(gchar** parts, void *data0)
         logMessage(DEBUGLVL, "Module %s was removed", parts[0]);
         return 1;
     }
-    
+
     return 0;
 }
 
@@ -500,7 +500,7 @@ void mlFreeModuleState(GTree *state)
     g_tree_destroy(state);
 }
 
-inline int cb_saveversions(gchar** parts, void *data0)
+static inline int cb_saveversions(gchar** parts, void *data0)
 {
     GHashTable *ht = data0;
     gchar *module = g_strdup(parts[0]);
@@ -543,7 +543,7 @@ inline int cb_saveversions(gchar** parts, void *data0)
 VersionState mlVersions()
 {
     GHashTable *ht = NULL;
-    
+
     ht = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     if(!ht) return NULL;
 
@@ -565,7 +565,7 @@ int mlDetectUpdate(VersionState a, VersionState b)
     if(!a && !b) return 0;
     if(!a) return 1;
     if(!b) return 1;
-    
+
     GList *modules = g_hash_table_get_keys(b);
     if(!modules) return 0;
 
