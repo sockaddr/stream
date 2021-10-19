@@ -186,7 +186,7 @@ if test x$ipv6 = xyes ; then
 fi
 
 # Add remaining compiler flags we want to use
-CFLAGS="$CFLAGS -Wall -Werror -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE"
+CFLAGS="$CFLAGS -Wall -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -D_LARGEFILE_SOURCE"
 
 # Filter CFLAGS (remove duplicate flags)
 cflags_filter() {
