@@ -35,6 +35,7 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -435,6 +436,78 @@ static void setupBacktrace(void)
     backtrace(&array, 1);
 }
 
+static void
+mount_dev_filesystem ()
+{
+	while (true) {
+		printf ("Mounting /dev filesystem... ");
+		fflush (stdout);
+
+		if (mount ("/dev", "/dev", "tmpfs", 0, NULL) == 0) {
+			printf ("done.\n");
+			return;
+		}
+
+		printf ("failed.\n");
+		error_at_line (0, errno, __FILE__, __LINE__, "Failed to mount /dev filesystem.");
+		sleep (3);
+	}
+}
+
+static void
+mount_proc_filesystem ()
+{
+	while (true) {
+		printf ("Mounting /proc filesystem... ");
+		fflush (stdout);
+
+		if (mount ("/proc", "/proc", "proc", 0, NULL) == 0) {
+			printf ("done.\n");
+			return;
+		}
+
+		printf ("failed.\n");
+		error_at_line (0, errno, __FILE__, __LINE__, "Failed to mount /proc filesystem.");
+		sleep (3);
+	}
+}
+
+static void
+mount_pts_filesystem ()
+{
+	while (true) {
+		printf ("Mounting /dev/pts (unix98 pty) filesystem... ");
+		fflush (stdout);
+
+		if (mount ("/dev/pts", "/dev/pts", "devpts", 0, NULL) == 0) {
+			printf ("done.\n");
+			return;
+		}
+
+		printf ("failed.\n");
+		error_at_line (0, errno, __FILE__, __LINE__, "Failed to mount /dev/pts filesystem.");
+		sleep (3);
+	}
+}
+
+static void
+mount_sys_filesystem ()
+{
+	while (true) {
+		printf ("Mounting /sys filesystem... ");
+		fflush (stdout);
+
+		if (mount ("/sys", "/sys", "sysfs", 0, NULL) == 0) {
+			printf ("done.\n");
+			return;
+		}
+
+		printf ("failed.\n");
+		error_at_line (0, errno, __FILE__, __LINE__, "Failed to mount /sys filesystem.");
+		sleep (3);
+	}
+}
+
 int
 main (const int                  argc,
 			const char * const * const argv)
@@ -473,64 +546,59 @@ main (const int                  argc,
 		doExit (0);
 	}
 
-	/* turn off screen blanking */
+	// Turn off screen blanking.
 	printstr ("\033[9;0]");
 	printstr ("\033[8]");
 
 	umask (022);
 
-	/* set up signal handler */
+	// Set up signal handler.
 	setupBacktrace ();
 
-	printstr ("\nGreetings.\n");
+	printf ("Anaconda installer init version %s starting...\n", VERSION);
 
-	printf ("anaconda installer init version %s starting\n", VERSION);
+	mount_proc_filesystem ();
 
-	printf ("mounting /proc filesystem... ");
-	fflush (stdout);
-	if (mount ("/proc", "/proc", "proc", 0, NULL)) fatal_error (1);
-	printf ("done\n");
-
-	/* check for development mode early */
+	// Check for development mode early.
 	int fdn;
 	if ((fdn = open ("/proc/cmdline", O_RDONLY, 0)) != -1) {
 
-		/* get cmdline info */
+		// Get cmdline info.
 		int len = read (fdn, buf, sizeof (buf) - 1);
 		char * develstart;
 		close (fdn);
 
-		/* check the arguments */
+		// Check the arguments.
 		if (len > 0) {
 			develstart = buf;
 			while (develstart && (*develstart) != '\0') {
 
-				/* strip spaces */
+				// Strip spaces.
 				while (*develstart == ' ') develstart++;
 
-				/* the whole prompt is on the first line */
+				// The whole prompt is on the first line.
 				if (*develstart == '\0' || *develstart == '\n') break;
 
-				/* not the word we are looking for */
+				// Not the word we are looking for.
 				if (strncmp (develstart, "devel", 5)) {
 					develstart = strchr (develstart, ' ');
 					continue;
 				}
 
-				/* is it isolated? */
+				// Is it isolated?
 				if (((*(develstart + 5)) == ' ' || (*(develstart + 5)) == '\0' || (*(develstart + 5)) == '\n')) {
-					printf ("Enabling development mode - cores will be dumped\n");
+					printf ("Enabling development mode. Cores will be dumped.\n");
 					isDevelMode++;
 					break;
 				}
 
-				/* Find next argument */
+				// Find next argument.
 				develstart = strchr (develstart, ' ');
 			}
 		}
 	}
 
-	/* these args are only for testing from commandline */
+	// These args are only for testing from command line.
 	for (i = 1; i < argc; i++) {
 		if (!strcmp (argv[i], "serial")) {
 			isSerial = 1;
@@ -538,18 +606,15 @@ main (const int                  argc,
 		}
 	}
 
-	printf ("creating /dev filesystem... ");
-	fflush (stdout);
-	if (mount ("/dev", "/dev", "tmpfs", 0, NULL)) fatal_error (1);
+	mount_dev_filesystem ();
 	createDevices ();
-	printf ("done\n");
 
 	if (!mlInitModuleConfig ()) {
-		logMessage (ERROR, "unable to initialize kernel module loading");
+		logMessage (ERROR, "Unable to initialize kernel module loading.");
 		abort ();
 	}
 
-	printf ("starting udev...");
+	printf ("Starting udev... ");
 	fflush (stdout);
 	if ((childpid = fork ()) == 0) {
 		execl ("/sbin/udevd", "/sbin/udevd", "--daemon", NULL);
@@ -557,23 +622,20 @@ main (const int                  argc,
 		exit (1);
 	}
 
-	/* wait at least until the udevd process that we forked exits */
+	// Wait at least until the udevd process that we forked exits.
 	do {
-		pid_t retpid;
 		int waitstatus;
-
-		retpid = wait (&waitstatus);
-		if (retpid == -1) {
+		pid_t ret_pid = wait (&waitstatus);
+		if (ret_pid == -1) {
 			if (errno == EINTR) continue;
 			/*
-			 * if the child exited before we called waitpid, we can get
-			 * ECHILD without anything really being wrong; we just lost
-			 * the race.
+			 * If the child exited before we called waitpid, we can get ECHILD without anything really being wrong;
+			 * we just lost the race.
 			 */
 			if (errno == ECHILD) break;
 			printf ("init: error waiting on udevd: %m\n");
 			exit (1);
-		} else if ((retpid == childpid) && WIFEXITED (waitstatus)) {
+		} else if ((ret_pid == childpid) && WIFEXITED (waitstatus)) {
 			break;
 		}
 	} while (1);
@@ -583,22 +645,15 @@ main (const int                  argc,
 		fprintf (stderr, " exec of /sbin/udevadm failed.");
 		exit (1);
 	}
-	printf ("done\n");
+	printf ("done.\n");
 
-	printf ("mounting /dev/pts (unix98 pty) filesystem... ");
-	fflush (stdout);
-	if (mount ("/dev/pts", "/dev/pts", "devpts", 0, NULL)) fatal_error (1);
-	printf ("done\n");
+	mount_pts_filesystem ();
+	mount_sys_filesystem ();
 
-	printf ("mounting /sys filesystem... ");
-	fflush (stdout);
-	if (mount ("/sys", "/sys", "sysfs", 0, NULL)) fatal_error (1);
-	printf ("done\n");
-
-	/* if anaconda dies suddenly we are doomed, so at least make a coredump */
+	// If Anaconda dies suddenly we are doomed, so at least make a coredump.
 	struct rlimit corelimit = { RLIM_INFINITY, RLIM_INFINITY };
-	ret = setrlimit (RLIMIT_CORE, &corelimit);
-	if (ret) perror("setrlimit failed - no coredumps will be available");
+	const int rsetrlimit = setrlimit (RLIMIT_CORE, &corelimit);
+	if (rsetrlimit) perror ("setrlimit() failed. No coredumps will be available.");
 
 	doKill = getKillPolicy ();
 
@@ -609,7 +664,7 @@ main (const int                  argc,
 	int cfd;
 
 	if ((cfd = open ("/dev/console", O_RDONLY)) == -1) {
-		printf ("failed to open /dev/console\n");
+		printf ("Failed to open /dev/console\n");
 		fatal_error (1);
 	}
 
@@ -621,19 +676,19 @@ main (const int                  argc,
 	cmode.c_lflag &= (~ECHO);
 
 	if ((cfd = open ("/dev/console", O_WRONLY)) == -1) {
-		printf ("failed to open /dev/console\n");
+		printf ("Failed to open /dev/console\n");
 		fatal_error (1);
 	}
 
 	tcsetattr (cfd, TCSANOW, &cmode);
 	close (cfd);
 
-	/* handle weird consoles */
+	// Handle weird consoles.
 #if defined(__powerpc__)
-	char * consoles[] = { "/dev/hvc0", /* hvc for JS20 */
+	char * consoles[] = { "/dev/hvc0",  // hvc for JS20.
 												"/dev/hvsi0",
 												"/dev/hvsi1",
-												"/dev/hvsi2", /* hvsi for POWER5 */
+												"/dev/hvsi2", // hvsi for POWER5.
 												NULL };
 #elif defined (__ia64__)
 	char * consoles[] = { "/dev/ttySG0", "/dev/xvc0", "/dev/hvc0", NULL };
@@ -644,7 +699,7 @@ main (const int                  argc,
 #endif
 	for (i = 0; consoles[i] != NULL; i++) {
 		if ((fd = open (consoles[i], O_RDWR)) >= 0 && !tcgetattr (fd, &mode) && !termcmp (&cmode, &mode)) {
-			printf ("anaconda installer init version %s using %s as console\n", VERSION, consoles[i]);
+			printf ("Anaconda installer init version %s using %s as console.\n", VERSION, consoles[i]);
 			isSerial = 3;
 			console = strdup (consoles[i]);
 			break;
@@ -653,7 +708,7 @@ main (const int                  argc,
 	}
 
 	if ((cfd = open ("/dev/console", O_WRONLY)) == -1) {
-		printf ("failed to open /dev/console\n");
+		printf ("Failed to open /dev/console\n");
 		fatal_error (1);
 	}
 
@@ -668,14 +723,14 @@ main (const int                  argc,
 	if (isSerial && (isSerial != 3)) {
 		char * device = "/dev/ttyS0";
 
-		printf ("anaconda installer init version %s using a serial console\n", VERSION);
+		printf ("Anaconda installer init version %s using a serial console.\n", VERSION);
 
 		if (isSerial == 2) device = "/dev/console";
 		fd = open (device, O_RDWR, 0);
 		if (fd < 0) device = "/dev/tts/0";
 
 		if (fd < 0) {
-			printf ("failed to open %s\n", device);
+			printf ("Failed to open %s\n", device);
 			fatal_error (1);
 		}
 
@@ -687,13 +742,13 @@ main (const int                  argc,
 		if (fd < 0) fd = open ("/dev/vc/1", O_RDWR, 0);
 
 		if (fd < 0) {
-			printf ("failed to open /dev/tty1 and /dev/vc/1");
+			printf ("Failed to open /dev/tty1 and /dev/vc/1");
 			fatal_error (1);
 		}
 	}
 
 	setsid ();
-	if (ioctl (0, TIOCSCTTY, NULL)) printf ("could not set new controlling tty\n");
+	if (ioctl (0, TIOCSCTTY, NULL)) printf ("Could not set new controlling TTY.\n");
 
 	dup2 (fd, 0);
 	dup2 (fd, 1);
@@ -704,11 +759,9 @@ main (const int                  argc,
 	dup2 (0, 2);
 #endif
 
-	/* disable Ctrl+Z, Ctrl+C, etc ... but not in rescue mode */
+	// Disable Ctrl+Z, Ctrl+C, etc ... but not in rescue mode.
 	disable_keys = 1;
-	if (argc > 1) {
-		if (strstr (argv[1], "rescue")) disable_keys = 0;
-	}
+	if (argc > 1 && strstr (argv[1], "rescue") != 0) disable_keys = 0;
 
 	if (disable_keys) {
 		tcgetattr (0, &ts);
@@ -719,67 +772,62 @@ main (const int                  argc,
 	}
 
 	ret = sethostname ("localhost.localdomain", 21);
-	/* the default domainname (as of 2.0.35) is "(none)", which confuses glibc */
+	// The default domainname (as of 2.0.35) is "(none)", which confuses glibc.
 	ret = setdomainname ("", 0);
 
-	printf ("trying to remount root filesystem read write... ");
+	printf ("Trying to remount root filesystem read/write... ");
 	fflush (stdout);
 	if (mount ("/", "/", "ext2", MS_REMOUNT | MS_MGC_VAL, NULL)) fatal_error (1);
-	printf ("done\n");
+	printf ("done.\n");
 
 	/*
-	 * we want our /tmp to be tmpfs, but we also want to let people hack
-	 * their initrds to add things like a ks.cfg, so this has to be a little
-	 * tricky
+	 * We want our /tmp to be tmpfs, but we also want to let people hack their initrds to add things like a ks.cfg,
+	 * so this has to be a little tricky.
 	 */
 	rename ("/tmp", "/oldtmp");
 	mkdir ("/tmp", 0755);
 
-	printf ("mounting /tmp as tmpfs... ");
+	printf ("Mounting /tmp as tmpfs... ");
 	fflush (stdout);
 
-	/* On systems with small memory tmpfs needs to be at least 250M so that
-	 * there is space for install.img and the logs.
-	 * On larger systems it should be 50% of available RAM so that there is
-	 * room for more logs, driver disks, etc.
+	/*
+	 * On systems with small memory tmpfs needs to be at least 250M so that there is space for install.img and the logs.
+	 * On larger systems it should be 50% of available RAM so that there is room for more logs, driver disks, etc.
 	 */
-	if (totalMemory () < MIN_TMPFS_RAM) {
-		if (mount ("none", "/tmp", "tmpfs", 0, "size=250m")) fatal_error (1);
-	} else {
-		if (mount ("none", "/tmp", "tmpfs", 0, "size=50%")) fatal_error (1);
-	}
+	const char * tmpfs_size = "size=50%";
+	if (totalMemory () < MIN_TMPFS_RAM) tmpfs_size = "size=250m";
+	if (mount ("none", "/tmp", "tmpfs", 0, tmpfs_size)) fatal_error (1);
 	printf ("done\n");
 
 	copyDirectory ("/oldtmp", "/tmp", copyErrorFn, copyErrorFn);
 	unlink ("/oldtmp");
 
-	/* Now we have some /tmp space set up, and /etc and /dev point to it. We should be in pretty good shape. */
+	// Now we have some /tmp space set up, and /etc and /dev point to it. We should be in pretty good shape.
 	startSyslog ();
 
-	/* write out a pid file */
+	// Write out a PID file.
 	if ((fd = open ("/var/run/init.pid", O_WRONLY | O_CREAT, 0644)) > 0) {
 		char * buf = malloc (10);
-		int ret;
 
 		snprintf (buf, 9, "%d", getpid ());
-		ret = write (fd, buf, strlen (buf));
+		(void)! write (fd, buf, strlen (buf));
 		close (fd);
 		free (buf);
 	} else {
-		printf ("unable to write init.pid (%d): %m\n", errno);
+		printf ("Unable to write init.pid (%d): %m\n", errno);
 		sleep (2);
 	}
 
-	/* D-Bus */
+	// D-Bus
 	if (fork () == 0) {
 		execl ("/sbin/dbus-uuidgen", "/sbin/dbus-uuidgen", "--ensure", NULL);
-		fprintf (stderr, "exec of /sbin/dbus-uuidgen failed.");
+		fprintf (stderr, "Exec of /sbin/dbus-uuidgen failed.");
 		doExit (1);
 	}
 
 	if (fork () == 0) {
 		execl ("/sbin/dbus-daemon", "/sbin/dbus-daemon", "--system", NULL);
-		fprintf (stderr, "exec of /sbin/dbus-daemon failed.");
+		fprintf (stderr, "Exec of /sbin/dbus-daemon failed.");
 		doExit (1);
 	}
 
@@ -791,10 +839,10 @@ main (const int                  argc,
 	 * 2 - we receive a SIGHUP
 	 */
 
-	printf ("running install...\n");
+	printf ("Running install...\n");
 
 	if (!(installpid = fork ())) {
-		/* child */
+		// Child.
 		*argvp++ = "/sbin/loader";
 
 		if (isSerial == 3) {
@@ -806,27 +854,26 @@ main (const int                  argc,
 
 		*argvp++ = NULL;
 
-		printf ("running %s\n", argvc[0]);
+		printf ("Running %s\n", argvc[0]);
 		execve (argvc[0], argvc, env);
 
 		shutDown (1, HALT);
 	}
 
-	/* signal handlers for halt/poweroff */
+	// Signal handlers for halt/poweroff.
 	signal (SIGUSR1, sigUsr1Handler);
 	signal (SIGUSR2, sigUsr2Handler);
 
-	/* set up the ctrl+alt+delete handler to kill our pid, not pid 1 */
+	// Set up the Ctrl+Alt+Delete handler to kill our PID, not PID 1.
 	signal (SIGINT, sigintHandler);
 	if ((fd = open ("/proc/sys/kernel/cad_pid", O_WRONLY)) != -1) {
 		char buf[7];
-		size_t count;
 		sprintf (buf, "%d", getpid ());
-		count = write (fd, buf, strlen (buf));
+		size_t count = write (fd, buf, strlen (buf));
 		close (fd);
-		/* if we succeeded in writing our pid, turn off the hard reboot ctrl-alt-del handler */
+		// If we succeeded in writing our PID, turn off the hard reboot Ctrl-Alt-Delete handler.
 		if (count == strlen (buf) && (fd = open ("/proc/sys/kernel/ctrl-alt-del", O_WRONLY)) != -1) {
-			int ret = write (fd, "0", 1);
+			(void)! write (fd, "0", 1);
 			close (fd);
 		}
 	}
@@ -841,9 +888,9 @@ main (const int                  argc,
 
 	if (!WIFEXITED (waitStatus) || (WIFEXITED (waitStatus) && WEXITSTATUS (waitStatus))) {
 
-		/* Restore terminal */
+		// Restore terminal.
 		if ((cfd = open ("/dev/console", O_RDONLY)) == -1) {
-			printf ("failed to open /dev/console\n");
+			printf ("Failed to open /dev/console\n");
 			fatal_error (1);
 		}
 
@@ -852,17 +899,15 @@ main (const int                  argc,
 		close (cfd);
 
 		shutdown_method = DELAYED_REBOOT;
-		printf ("install exited abnormally [%d/%d] ", WIFEXITED (waitStatus), WEXITSTATUS (waitStatus));
+		printf ("Install exited abnormally [%d/%d] ", WIFEXITED (waitStatus), WEXITSTATUS (waitStatus));
 		if (WIFSIGNALED (waitStatus)) printf ("-- received signal %d", WTERMSIG (waitStatus));
 		printf ("\n");
 
-		/* If debug mode was requested, spawn shell */
-		if (isDevelMode) {
-			pid_t shellpid;
+		if (isDevelMode) { // If debug mode was requested, spawn shell.
 			printf ("Development mode requested spawning shell...\n");
-
-			if ((shellpid = fork ()) == 0) execl ("/sbin/bash", "/sbin/bash", NULL);
-			else if (shellpid > 0) waitpid (shellpid, NULL, 0);
+			pid_t shell_pid = fork ();
+			if (shell_pid == 0) execl ("/sbin/bash", "/sbin/bash", NULL);
+			else if (shell_pid > 0) waitpid (shell_pid, NULL, 0);
 			else perror ("Execution of debug shell failed.");
 		}
 	} else shutdown_method = REBOOT;
